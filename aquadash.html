@@ -1,18 +1,44 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Hydro-Dash: Fixed Boosts</title>
+    <title>Hydro-Dash: Credits Edition</title>
     <style>
-        body { background: #050505; color: white; font-family: 'Arial', sans-serif; text-align: center; overflow: hidden; user-select: none; }
+        body { background: #050505; color: white; font-family: 'Arial', sans-serif; text-align: center; overflow-y: auto; user-select: none; padding-bottom: 50px; }
         canvas { background: #004e92; border: 6px solid #222; display: block; margin: 10px auto; border-radius: 4px; box-shadow: 0 0 40px rgba(0, 78, 146, 0.4); }
         .stats { font-size: 1.1rem; margin-bottom: 10px; background: rgba(255,255,255,0.1); padding: 10px 20px; display: inline-block; border-radius: 50px; border: 1px solid #444; }
         .stat-box { margin: 0 15px; }
+        
+        /* Footer Layout */
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            width: 900px;
+            margin: 20px auto;
+            gap: 20px;
+        }
+
+        .info-box { 
+            background: #111; border: 2px solid #333; 
+            border-radius: 12px; padding: 20px; text-align: left; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .info-box h3 { margin-top: 0; color: #00d4ff; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #333; padding-bottom: 10px; font-size: 1.1rem; }
+        
+        .instructions-list { list-style: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .instructions-list li { font-size: 0.85rem; line-height: 1.3; color: #ccc; position: relative; padding-left: 20px; }
+        .instructions-list li::before { content: '▹'; position: absolute; left: 0; color: #00d4ff; }
+
+        .credits-content { text-align: center; display: flex; flex-direction: column; justify-content: center; height: 80%; }
+        .developer-name { font-size: 1.2rem; font-weight: bold; color: #ffeb3b; margin: 5px 0; text-shadow: 0 0 10px rgba(255,235,59,0.3); }
+        .role { font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 2px; }
+
         #countdown-overlay { font-size: 100px; font-weight: 900; color: #fff; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; text-shadow: 0 0 30px #00d4ff; z-index: 5; }
         #shop-ui { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10,10,20,0.95); border: 3px solid #00d4ff; padding: 25px; border-radius: 15px; display: none; z-index: 100; width: 600px; }
         .shop-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-top: 15px; }
         .shop-item { background: #1a1a1a; padding: 15px; border-radius: 8px; border: 2px solid #333; cursor: pointer; }
         .shop-item.selected { border-color: #00ff00; background: #1a2a1a; }
-        button#start-btn { margin-top: 20px; padding: 12px 40px; background: #00d4ff; border: none; font-weight: bold; cursor: pointer; border-radius: 5px; color: white; }
+        button#start-btn { margin-top: 20px; padding: 12px 40px; background: #00d4ff; border: none; font-weight: bold; cursor: pointer; border-radius: 5px; color: white; text-transform: uppercase; }
+        .highlight { color: #fff; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -31,6 +57,28 @@
             <h2 style="margin-top:0; color:#00d4ff;">EQUIPMENT & GEAR</h2>
             <div class="shop-grid" id="shop-items"></div>
             <button id="start-btn" onclick="closeShop()">Begin Race</button>
+        </div>
+    </div>
+
+    <div class="footer-grid">
+        <div class="info-box">
+            <h3>📋 Athlete's Handbook</h3>
+            <ul class="instructions-list">
+                <li><span class="highlight">Laptop Only:</span> Requires physical keyboard.</li>
+                <li><span class="highlight">Movement:</span> Alt. <span class="highlight">Left/Right Arrows</span>.</li>
+                <li><span class="highlight">Hazards:</span> Avoid <span style="color:#ff4444; font-weight:bold;">Red Bumpers</span>.</li>
+                <li><span class="highlight">Boosts:</span> Hit <span style="color:#00ffff; font-weight:bold;">Cyan Zones</span>.</li>
+                <li><span class="highlight">Lanes:</span> <span class="highlight">Up/Down</span> to dodge.</li>
+                <li><span class="highlight">AquaPower:</span> <span class="highlight">Spacebar</span> for turbo.</li>
+            </ul>
+        </div>
+        <div class="info-box">
+            <h3>✨ Circuit Credits</h3>
+            <div class="credits-content">
+                <div class="role">Chief Developers</div>
+                <div class="developer-name">Ariha Jain</div>
+                <div class="developer-name">Rajat Jain</div>
+            </div>
         </div>
     </div>
 
@@ -127,14 +175,8 @@
 
     function generateLevel() {
         boosts = []; obstacles = [];
-        // Reduced obstacles to 20 for better flow
         for(let i=0; i<15; i++) boosts.push({ x: Math.random() * (poolLength - 1000) + 500, lane: Math.floor(Math.random() * 5), width: 300 });
         for(let i=0; i<20; i++) obstacles.push({ x: Math.random() * (poolLength - 1000) + 800, lane: Math.floor(Math.random() * 5) });
-    }
-
-    function formatTime(ms) {
-        let m = Math.floor(ms / 60000); let s = Math.floor((ms % 60000) / 1000); let c = Math.floor((ms % 1000) / 10);
-        return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}:${c.toString().padStart(2,'0')}`;
     }
 
     function drawSwimmer(s, color, camX, isPlayer) {
@@ -142,11 +184,9 @@
         if(s.stun <= 0) s.limbAngle += (s.speed * 0.15) + 0.05;
         const armWave = Math.sin(s.limbAngle) * 20;
         const legWave = Math.cos(s.limbAngle) * 15;
-
         ctx.save();
         ctx.translate(s.x - camX, s.y);
         if(s.stun > 0) ctx.filter = "hue-rotate(280deg) brightness(1.5)"; 
-        
         ctx.strokeStyle = "#ffdbac"; ctx.lineWidth = 6; ctx.lineCap = "round";
         ctx.beginPath(); ctx.moveTo(0, 5); ctx.lineTo(-15, 5 + legWave); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(0, 15); ctx.lineTo(-15, 15 - legWave); ctx.stroke();
@@ -163,20 +203,17 @@
     function update() {
         if (gameState === "RACING") {
             globalTime++;
-            let currentRaceTime = Date.now() - startTime;
             let progress = Math.min(poolLength, Math.floor(player.x));
             document.getElementById('dist-ui').innerText = `${progress} / ${poolLength}`;
 
-            // Player Logic
             if(player.stun > 0) { player.stun--; player.speed *= 0.6; }
             else { player.speed *= currentSuit.drag; }
             player.x += player.speed;
 
-            // CPU Logic & AI
             if(cpu.stun > 0) { cpu.stun--; cpu.speed *= 0.6; }
             else { cpu.speed = cpu.baseSpeed + (cpu.x/poolLength * 1.5); }
             cpu.x += cpu.speed;
-            cpu.targetY = cpu.lane * 80 + 40; // Fixed lane centering
+            cpu.targetY = cpu.lane * 80 + 40;
 
             obstacles.forEach(obs => {
                 if(obs.lane === cpu.lane && obs.x > cpu.x && obs.x < cpu.x + 180) {
@@ -187,16 +224,13 @@
 
             cameraX = Math.max(0, player.x - 200);
 
-            // FIXED BOOST DETECTION
             boosts.forEach(zone => {
-                // Check if player is within the zone x-range AND in the correct lane
                 if (player.lane === zone.lane && player.x + 40 > zone.x && player.x < zone.x + zone.width) {
                     player.speed += 0.35;
                     particles.push(new Particle(player.x, player.y + 10, '#00ffff'));
                 }
             });
 
-            // Collision Check (Reduced Stun Hitbox)
             obstacles.forEach(obs => {
                 if(Math.abs(player.x + 20 - obs.x) < 30 && player.lane === obs.lane && player.stun <= 0) {
                     player.stun = 15; player.speed = -0.3;
@@ -208,7 +242,6 @@
             });
 
             if (player.speed > 0.5) particles.push(new Particle(player.x, player.y + 10));
-
             if (player.x >= poolLength || cpu.x >= poolLength) {
                 gameState = "FINISHED";
                 let win = player.x >= poolLength;
@@ -224,19 +257,14 @@
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // Lane markers
         for(let i=0; i<=5; i++) {
             let y = i * 80;
             ctx.strokeStyle = "rgba(255,255,255,0.1)"; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
         }
-        // Boosts
         boosts.forEach(z => {
             ctx.fillStyle = "rgba(0, 255, 255, 0.25)";
             ctx.fillRect(z.x - cameraX, z.lane * 80 + 5, z.width, 70);
-            ctx.strokeStyle = "rgba(0, 255, 255, 0.5)";
-            ctx.lineWidth = 2; ctx.strokeRect(z.x - cameraX, z.lane * 80 + 5, z.width, 70);
         });
-        // Obstacles
         obstacles.forEach(o => {
             ctx.fillStyle = "#ff4444";
             ctx.beginPath(); ctx.arc(o.x - cameraX, o.lane * 80 + 40, 15, 0, Math.PI * 2); ctx.fill();
