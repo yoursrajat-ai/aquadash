@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hydro-Dash: Fixed Boosts</title>
+    <style>
+        body { background: #050505; color: white; font-family: 'Arial', sans-serif; text-align: center; overflow: hidden; user-select: none; }
+        canvas { background: #004e92; border: 6px solid #222; display: block; margin: 10px auto; border-radius: 4px; box-shadow: 0 0 40px rgba(0, 78, 146, 0.4); }
+        .stats { font-size: 1.1rem; margin-bottom: 10px; background: rgba(255,255,255,0.1); padding: 10px 20px; display: inline-block; border-radius: 50px; border: 1px solid #444; }
+        .stat-box { margin: 0 15px; }
+        #countdown-overlay { font-size: 100px; font-weight: 900; color: #fff; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; text-shadow: 0 0 30px #00d4ff; z-index: 5; }
+        #shop-ui { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10,10,20,0.95); border: 3px solid #00d4ff; padding: 25px; border-radius: 15px; display: none; z-index: 100; width: 600px; }
+        .shop-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-top: 15px; }
+        .shop-item { background: #1a1a1a; padding: 15px; border-radius: 8px; border: 2px solid #333; cursor: pointer; }
+        .shop-item.selected { border-color: #00ff00; background: #1a2a1a; }
+        button#start-btn { margin-top: 20px; padding: 12px 40px; background: #00d4ff; border: none; font-weight: bold; cursor: pointer; border-radius: 5px; color: white; }
+    </style>
+</head>
+<body>
+    <h1>🏅 HYDRO-DASH: ELITE PERFORMANCE 🏅</h1>
+    <div class="stats">
+        <span class="stat-box">Tokens: <b id="tokens">0</b></span>
+        <span class="stat-box">AquaPowers: <b id="powers" style="color:#00ffff">0</b></span>
+        <span class="stat-box">Distance: <b id="dist-ui" style="color:#00ff00">0 / 6000</b>m</span>
+        <span class="stat-box">Best: <b id="best" style="color:#00d4ff">--:--:--</b></span>
+    </div>
+    
+    <div style="position: relative; width: 900px; margin: 0 auto;">
+        <canvas id="gameCanvas" width="900" height="400"></canvas>
+        <div id="countdown-overlay"></div>
+        <div id="shop-ui">
+            <h2 style="margin-top:0; color:#00d4ff;">EQUIPMENT & GEAR</h2>
+            <div class="shop-grid" id="shop-items"></div>
+            <button id="start-btn" onclick="closeShop()">Begin Race</button>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('countdown-overlay');
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const suits = [
+        { id: 'basic', name: 'Cotton Shorts', price: 0, color: '#FFEB3B', drag: 0.97, power: 0.8 },
+        { id: 'pro', name: 'Pro Jammers', price: 5, color: '#2196F3', drag: 0.976, power: 0.85 },
+        { id: 'carbon', name: 'Carbon Flex', price: 10, color: '#9C27B0', drag: 0.98, power: 0.88 },
+        { id: 'hydro', name: 'Hydro Skin', price: 18, color: '#00FFFF', drag: 0.984, power: 0.92 },
+        { id: 'nebula', name: 'Nebula Suit', price: 50, color: '#FFFFFF', drag: 0.992, power: 1.2 }
+    ];
+
+    let ownedSuits = ['basic'];
+    let currentSuit = suits[0];
+    let tokens = 0, aquaPowers = 0, gameState = "MENU", lastKey = null;
+    let particles = [], boosts = [], obstacles = [], cameraX = 0, globalTime = 0;
+    let startTime = 0, bestTime = localStorage.getItem('hydroDashBest');
+    const poolLength = 6000;
+
+    function playSound(freq, type, duration, vol=0.03) {
+        try {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        } catch(e) {}
+    }
+
+    class Particle {
+        constructor(x, y, color) {
+            this.x = x; this.y = y; this.vx = -Math.random() * 5 - 2; this.vy = (Math.random() - 0.5) * 4;
+            this.life = 1.0; this.color = color || '#fff'; this.size = Math.random() * 3 + 2;
+        }
+        update() { this.x += this.vx; this.y += this.vy; this.life -= 0.04; }
+        draw(camX) {
+            ctx.fillStyle = this.color; ctx.globalAlpha = this.life;
+            ctx.beginPath(); ctx.arc(this.x - camX, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+            ctx.globalAlpha = 1.0;
+        }
+    }
+
+    function openShop() {
+        gameState = "MENU";
+        document.getElementById('shop-ui').style.display = 'block';
+        const container = document.getElementById('shop-items');
+        container.innerHTML = '';
+        suits.forEach(suit => {
+            const isOwned = ownedSuits.includes(suit.id);
+            const isSelected = currentSuit.id === suit.id;
+            const item = document.createElement('div');
+            item.className = `shop-item ${isSelected ? 'selected' : ''}`;
+            item.innerHTML = `<span class="item-name" style="color:${suit.color}">${suit.name}</span>
+                              <span class="item-price">${isOwned ? 'OWNED' : '💎 ' + suit.price}</span>`;
+            item.onclick = () => {
+                if (isOwned) { currentSuit = suit; openShop(); }
+                else if (tokens >= suit.price) { tokens -= suit.price; ownedSuits.push(suit.id); currentSuit = suit; document.getElementById('tokens').innerText = tokens; openShop(); }
+            };
+            container.appendChild(item);
+        });
+    }
+
+    function closeShop() { document.getElementById('shop-ui').style.display = 'none'; resetRace(); }
+
+    let player = { x: 50, y: 50, lane: 2, targetY: 210, speed: 0, limbAngle: 0, stun: 0 };
+    let cpu = { x: 50, y: 50, lane: 4, targetY: 370, speed: 0, baseSpeed: 2.8, limbAngle: 0, stun: 0 };
+
+    function resetRace() {
+        player.x = 50; player.speed = 0; player.lane = 2; player.stun = 0;
+        cpu.x = 50; cpu.speed = 0; cpu.lane = 4; cpu.stun = 0; cpu.baseSpeed = 2.8 + (ownedSuits.length * 0.4);
+        cameraX = 0; particles = []; aquaPowers = 0;
+        document.getElementById('powers').innerText = "0";
+        startCountdown();
+    }
+
+    function startCountdown() {
+        gameState = "COUNTDOWN";
+        let count = 3; overlay.innerText = count;
+        generateLevel();
+        let timer = setInterval(() => {
+            count--;
+            if (count > 0) { overlay.innerText = count; playSound(440, 'sine', 0.1); }
+            else if (count === 0) { overlay.innerText = "GO!"; startTime = Date.now(); gameState = "RACING"; }
+            else { overlay.innerText = ""; clearInterval(timer); }
+        }, 1000);
+    }
+
+    function generateLevel() {
+        boosts = []; obstacles = [];
+        // Reduced obstacles to 20 for better flow
+        for(let i=0; i<15; i++) boosts.push({ x: Math.random() * (poolLength - 1000) + 500, lane: Math.floor(Math.random() * 5), width: 300 });
+        for(let i=0; i<20; i++) obstacles.push({ x: Math.random() * (poolLength - 1000) + 800, lane: Math.floor(Math.random() * 5) });
+    }
+
+    function formatTime(ms) {
+        let m = Math.floor(ms / 60000); let s = Math.floor((ms % 60000) / 1000); let c = Math.floor((ms % 1000) / 10);
+        return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}:${c.toString().padStart(2,'0')}`;
+    }
+
+    function drawSwimmer(s, color, camX, isPlayer) {
+        s.y += (s.targetY - s.y) * 0.1;
+        if(s.stun <= 0) s.limbAngle += (s.speed * 0.15) + 0.05;
+        const armWave = Math.sin(s.limbAngle) * 20;
+        const legWave = Math.cos(s.limbAngle) * 15;
+
+        ctx.save();
+        ctx.translate(s.x - camX, s.y);
+        if(s.stun > 0) ctx.filter = "hue-rotate(280deg) brightness(1.5)"; 
+        
+        ctx.strokeStyle = "#ffdbac"; ctx.lineWidth = 6; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(0, 5); ctx.lineTo(-15, 5 + legWave); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 15); ctx.lineTo(-15, 15 - legWave); ctx.stroke();
+        ctx.fillStyle = color; ctx.fillRect(0, 0, 25, 20); 
+        ctx.fillStyle = "#ffdbac"; ctx.fillRect(25, 0, 15, 20);
+        ctx.strokeStyle = "#ffdbac";
+        ctx.beginPath(); ctx.moveTo(35, 10); ctx.lineTo(35 + armWave, -10); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(35, 10); ctx.lineTo(35 - armWave, 30); ctx.stroke();
+        ctx.beginPath(); ctx.arc(45, 10, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = isPlayer ? "#00ffff" : "#333"; ctx.fillRect(48, 5, 5, 3);
+        ctx.restore();
+    }
+
+    function update() {
+        if (gameState === "RACING") {
+            globalTime++;
+            let currentRaceTime = Date.now() - startTime;
+            let progress = Math.min(poolLength, Math.floor(player.x));
+            document.getElementById('dist-ui').innerText = `${progress} / ${poolLength}`;
+
+            // Player Logic
+            if(player.stun > 0) { player.stun--; player.speed *= 0.6; }
+            else { player.speed *= currentSuit.drag; }
+            player.x += player.speed;
+
+            // CPU Logic & AI
+            if(cpu.stun > 0) { cpu.stun--; cpu.speed *= 0.6; }
+            else { cpu.speed = cpu.baseSpeed + (cpu.x/poolLength * 1.5); }
+            cpu.x += cpu.speed;
+            cpu.targetY = cpu.lane * 80 + 40; // Fixed lane centering
+
+            obstacles.forEach(obs => {
+                if(obs.lane === cpu.lane && obs.x > cpu.x && obs.x < cpu.x + 180) {
+                    if(cpu.lane === 0) cpu.lane = 1; else if(cpu.lane === 4) cpu.lane = 3;
+                    else cpu.lane += (Math.random() > 0.5 ? 1 : -1);
+                }
+            });
+
+            cameraX = Math.max(0, player.x - 200);
+
+            // FIXED BOOST DETECTION
+            boosts.forEach(zone => {
+                // Check if player is within the zone x-range AND in the correct lane
+                if (player.lane === zone.lane && player.x + 40 > zone.x && player.x < zone.x + zone.width) {
+                    player.speed += 0.35;
+                    particles.push(new Particle(player.x, player.y + 10, '#00ffff'));
+                }
+            });
+
+            // Collision Check (Reduced Stun Hitbox)
+            obstacles.forEach(obs => {
+                if(Math.abs(player.x + 20 - obs.x) < 30 && player.lane === obs.lane && player.stun <= 0) {
+                    player.stun = 15; player.speed = -0.3;
+                    playSound(100, 'square', 0.2, 0.1);
+                }
+                if(Math.abs(cpu.x + 20 - obs.x) < 30 && cpu.lane === obs.lane && cpu.stun <= 0) {
+                    cpu.stun = 15; cpu.speed = -0.3;
+                }
+            });
+
+            if (player.speed > 0.5) particles.push(new Particle(player.x, player.y + 10));
+
+            if (player.x >= poolLength || cpu.x >= poolLength) {
+                gameState = "FINISHED";
+                let win = player.x >= poolLength;
+                if (win) { tokens += 5; document.getElementById('tokens').innerText = tokens; }
+                setTimeout(openShop, 1500);
+            }
+        }
+        particles = particles.filter(p => p.life > 0);
+        particles.forEach(p => p.update());
+        draw();
+        requestAnimationFrame(update);
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Lane markers
+        for(let i=0; i<=5; i++) {
+            let y = i * 80;
+            ctx.strokeStyle = "rgba(255,255,255,0.1)"; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        }
+        // Boosts
+        boosts.forEach(z => {
+            ctx.fillStyle = "rgba(0, 255, 255, 0.25)";
+            ctx.fillRect(z.x - cameraX, z.lane * 80 + 5, z.width, 70);
+            ctx.strokeStyle = "rgba(0, 255, 255, 0.5)";
+            ctx.lineWidth = 2; ctx.strokeRect(z.x - cameraX, z.lane * 80 + 5, z.width, 70);
+        });
+        // Obstacles
+        obstacles.forEach(o => {
+            ctx.fillStyle = "#ff4444";
+            ctx.beginPath(); ctx.arc(o.x - cameraX, o.lane * 80 + 40, 15, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.stroke();
+        });
+        if (poolLength - cameraX < canvas.width) {
+            ctx.fillStyle = "#ffeb3b"; ctx.fillRect(poolLength - cameraX, 0, 20, 400);
+        }
+        particles.forEach(p => p.draw(cameraX));
+        drawSwimmer(player, currentSuit.color, cameraX, true);
+        drawSwimmer(cpu, "#ff4444", cameraX, false);
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if (gameState !== "RACING" || player.stun > 0) return;
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            if (e.key !== lastKey) {
+                player.speed += currentSuit.power;
+                lastKey = e.key;
+                playSound(500 + (player.speed * 10), 'sine', 0.05);
+            }
+        }
+        if (e.key === "ArrowUp" && player.lane > 0) { player.lane--; player.targetY = player.lane * 80 + 40; }
+        if (e.key === "ArrowDown" && player.lane < 4) { player.lane++; player.targetY = player.lane * 80 + 40; }
+        if (e.code === "Space") {
+            if (aquaPowers > 0) { aquaPowers--; document.getElementById('powers').innerText = aquaPowers; player.speed += 8; }
+            else if (tokens >= 2) { tokens -= 2; aquaPowers++; document.getElementById('tokens').innerText = tokens; document.getElementById('powers').innerText = aquaPowers; }
+        }
+    });
+
+    openShop();
+    update();
+</script>
+</body>
+</html>
