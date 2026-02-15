@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hydro-Dash: Jain Legacy</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <link rel="apple-touch-icon" href="icon.png">
+
+    <style>
+        /* Fixes the iOS Double-Tap and Scrolling bugs */
+        * { touch-action: manipulation; -webkit-touch-callout: none; -webkit-user-select: none; }
+        
+        body { 
+            background: #050505; color: white; font-family: 'Arial', sans-serif; 
+            text-align: center; overflow: hidden; margin: 0; padding: 0;
+            width: 100vw; height: 100vh;
+        }
+        
+        canvas { 
+            background: #004e92; border: 4px solid #222; display: block; 
+            margin: 10px auto; border-radius: 4px; max-width: 95vw; max-height: 70vh; 
+        }
+        
+        .stats { 
+            font-size: 0.8rem; margin: 10px 0; background: rgba(255,255,255,0.1); 
+            padding: 5px 15px; display: inline-block; border-radius: 50px; border: 1px solid #444; 
+        }
+        .stat-box { margin: 0 8px; }
+        
+        /* Mobile Touch HUD */
+        #mobile-hud { 
+            position: fixed; bottom: 30px; width: 100%; display: none; 
+            justify-content: space-between; padding: 0 40px; box-sizing: border-box; 
+            z-index: 1000; pointer-events: none; 
+        }
+        .touch-btn { 
+            pointer-events: auto; background: rgba(255,255,255,0.2); 
+            border: 2px solid rgba(255,255,255,0.6); color: white; 
+            border-radius: 50%; display: flex; align-items: center; justify-content: center; 
+            font-weight: bold; active { background: rgba(255,255,255,0.4); }
+        }
+        #btn-swim { width: 100px; height: 100px; border: 3px solid gold; color: gold; font-size: 1.1rem; }
+        .nav-group { display: flex; gap: 20px; }
+        .nav-btn { width: 70px; height: 70px; font-size: 1.8rem; }
+
+        /* Shop UI Fixes */
+        #shop-ui { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+            background: rgba(5,15,30,0.98); border: 3px solid #00d4ff; padding: 20px; 
+            border-radius: 15px; display: none; z-index: 100; width: 80%; 
+            max-width: 600px; max-height: 80vh; overflow-y: auto; 
+        }
+        .shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+        .shop-item { background: #1a1a1a; padding: 8px; border-radius: 8px; border: 2px solid #333; cursor: pointer; font-size: 0.75rem; }
+        .shop-item.selected { border-color: #00ff00; background: #1a2a1a; }
+        
+        #countdown-overlay { 
+            font-size: 80px; font-weight: 900; color: #fff; position: absolute; 
+            top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; 
+            text-shadow: 0 0 30px #00d4ff; z-index: 5; 
+        }
+    </style>
+</head>
+<body>
+
+    <div class="stats">
+        <span class="stat-box">💎 <b id="tokens">0</b></span>
+        <span class="stat-box">📍 <b id="dist-ui">0 / 6000</b></span>
+        <span class="stat-box">⏱️ <b id="timer">00:00:00</b></span>
+    </div>
+
+    <div style="position: relative;">
+        <canvas id="gameCanvas" width="900" height="400"></canvas>
+        <div id="countdown-overlay"></div>
+        <div id="shop-ui">
+            <h2 style="color:#00d4ff; margin-top:0;">PRO GEAR SHOP</h2>
+            <div class="shop-grid" id="shop-items"></div>
+            <button onclick="closeShop()" style="margin-top:20px; padding:12px 40px; background:#00d4ff; border:none; border-radius:8px; font-weight:bold; color:white;">ENTER POOL</button>
+        </div>
+    </div>
+
+    <div id="mobile-hud">
+        <div class="nav-group">
+            <div id="btn-up" class="touch-btn nav-btn">↑</div>
+            <div id="btn-down" class="touch-btn nav-btn">↓</div>
+        </div>
+        <div id="btn-swim" class="touch-btn">SWIM!</div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let audioCtx;
+    
+    // Initialize Audio on first touch (Required for iOS)
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    }
+
+    const suits = [
+        { id: 's1', name: 'Cotton Shorts', price: 0, color: '#FFEB3B', drag: 0.97, power: 0.8 },
+        { id: 's2', name: 'Training Jammer', price: 5, color: '#2196F3', drag: 0.975, power: 0.85 },
+        { id: 's3', name: 'Silicone Skin', price: 10, color: '#4CAF50', drag: 0.98, power: 0.88 },
+        { id: 's4', name: 'Carbon Glide', price: 15, color: '#9C27B0', drag: 0.982, power: 0.9 },
+        { id: 's5', name: 'Vortex Elite', price: 25, color: '#FF5722', drag: 0.985, power: 0.95 },
+        { id: 's6', name: 'Hydro Stealth', price: 40, color: '#607D8B', drag: 0.988, power: 1.0 },
+        { id: 's7', name: 'Neon Surge', price: 60, color: '#00FF00', drag: 0.99, power: 1.1 },
+        { id: 's8', name: 'Titanium Flex', price: 85, color: '#E91E63', drag: 0.992, power: 1.2 },
+        { id: 's9', name: 'Nebula Plated', price: 120, color: '#FFFFFF', drag: 0.994, power: 1.4 },
+        { id: 's10', name: 'Jain Legacy', price: 200, color: '#FFD700', drag: 0.997, power: 1.8 }
+    ];
+
+    let ownedSuits = ['s1'], currentSuit = suits[0], tokens = 0, gameState = "MENU";
+    let particles = [], boosts = [], obstacles = [], cameraX = 0, poolLength = 6000;
+    let startTime = 0;
+    let player = { x: 50, lane: 2, speed: 0, stun: 0, limb: 0 };
+    let cpu = { x: 50, lane: 4, speed: 0, stun: 0, limb: 0, base: 2.8 };
+
+    const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isMobile) document.getElementById('mobile-hud').style.display = 'flex';
+
+    function playSound(freq, type, duration) {
+        if (!audioCtx) return;
+        try {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        } catch(e) {}
+    }
+
+    function handleSwim() {
+        if (gameState !== "RACING" || player.stun > 0) return;
+        player.speed += currentSuit.power;
+        playSound(600, 'sine', 0.05);
+    }
+
+    // Touch Event Listeners with preventDefault to stop iOS zoom/scroll
+    document.getElementById('btn-swim').addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); handleSwim(); });
+    document.getElementById('btn-up').addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); if(player.lane > 0) player.lane--; });
+    document.getElementById('btn-down').addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); if(player.lane < 4) player.lane++; });
+
+    function openShop() {
+        gameState = "MENU";
+        document.getElementById('shop-ui').style.display = 'block';
+        const container = document.getElementById('shop-items');
+        container.innerHTML = '';
+        suits.forEach(suit => {
+            const isOwned = ownedSuits.includes(suit.id);
+            const item = document.createElement('div');
+            item.className = `shop-item ${currentSuit.id === suit.id ? 'selected' : ''}`;
+            item.innerHTML = `<b style="color:${suit.color}">${suit.name}</b><br>${isOwned ? 'OWNED' : '💎 ' + suit.price}`;
+            item.onclick = () => {
+                initAudio();
+                if (isOwned) { currentSuit = suit; openShop(); }
+                else if (tokens >= suit.price) { tokens -= suit.price; ownedSuits.push(suit.id); currentSuit = suit; openShop(); }
+            };
+            container.appendChild(item);
+        });
+        document.getElementById('tokens').innerText = tokens;
+    }
+
+    function closeShop() { initAudio(); document.getElementById('shop-ui').style.display = 'none'; resetRace(); }
+
+    function resetRace() {
+        player.x = 50; player.speed = 0; player.lane = 2; player.stun = 0;
+        cpu.x = 50; cpu.speed = 0; cpu.lane = 4; cpu.stun = 0; cpu.base = 2.8 + (ownedSuits.length * 0.3);
+        cameraX = 0; particles = []; gameState = "COUNTDOWN";
+        let count = 3; 
+        const interval = setInterval(() => {
+            document.getElementById('countdown-overlay').innerText = count > 0 ? count : "GO!";
+            if (count === 0) { gameState = "RACING"; startTime = Date.now(); }
+            if (count < 0) { document.getElementById('countdown-overlay').innerText = ""; clearInterval(interval); }
+            count--;
+        }, 1000);
+        generateLevel();
+    }
+
+    function generateLevel() {
+        boosts = []; obstacles = [];
+        for(let i=0; i<12; i++) boosts.push({ x: 800 + (i * 450), lane: Math.floor(Math.random() * 5), w: 250 });
+        for(let i=0; i<10; i++) obstacles.push({ x: 1200 + (i * 600), lane: Math.floor(Math.random() * 5) });
+    }
+
+    function update() {
+        if (gameState === "RACING") {
+            let now = Date.now() - startTime;
+            document.getElementById('timer').innerText = new Date(now).toISOString().substr(14, 8);
+            document.getElementById('dist-ui').innerText = `${Math.floor(player.x)} / ${poolLength}`;
+
+            player.speed *= currentSuit.drag;
+            if(player.stun > 0) { player.stun--; player.speed *= 0.5; }
+            player.x += player.speed;
+
+            cpu.speed = cpu.base + (cpu.x/poolLength);
+            cpu.x += cpu.speed;
+            cameraX = Math.max(0, player.x - 200);
+
+            boosts.forEach(b => {
+                if(player.lane === b.lane && player.x + 30 > b.x && player.x < b.x + b.w) player.speed += 0.3;
+            });
+
+            obstacles.forEach(o => {
+                if(Math.abs(player.x - o.x) < 30 && player.lane === o.lane && player.stun <= 0) {
+                    player.stun = 25; playSound(100, 'square', 0.2);
+                }
+            });
+
+            if (player.speed > 0.5) {
+                particles.push({x: player.x, y: player.lane * 80 + 40, life: 1, color: currentSuit.id === 's10' ? 'gold' : 'white'});
+            }
+
+            if (player.x >= poolLength || cpu.x >= poolLength) {
+                gameState = "FINISHED";
+                if(player.x >= poolLength) tokens += 10;
+                setTimeout(openShop, 2000);
+            }
+        }
+        particles.forEach(p => { p.x -= 2; p.life -= 0.05; });
+        particles = particles.filter(p => p.life > 0);
+        draw();
+        requestAnimationFrame(update);
+    }
+
+    function drawSwimmer(s, color, camX, isPlayer) {
+        let y = s.lane * 80 + 40;
+        s.limb += 0.15;
+        ctx.save();
+        ctx.translate(s.x - camX, y);
+        if(isPlayer && currentSuit.id === 's10') { ctx.shadowBlur = 15; ctx.shadowColor = "gold"; }
+        ctx.fillStyle = "#ffdbac"; ctx.fillRect(20, -10, 12, 20); 
+        ctx.fillStyle = color; ctx.fillRect(0, -10, 25, 20); 
+        ctx.strokeStyle = "#ffdbac"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(10 + Math.sin(s.limb)*15, -18); ctx.stroke();
+        ctx.restore();
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for(let i=0; i<5; i++) {
+            ctx.fillStyle = "#005ea8"; ctx.fillRect(0, i * 80, canvas.width, 80);
+            ctx.fillStyle = "rgba(255,255,255,0.2)"; ctx.fillRect(0, i * 80, canvas.width, 2);
+        }
+        boosts.forEach(b => { ctx.fillStyle = "rgba(0,255,255,0.2)"; ctx.fillRect(b.x - cameraX, b.lane * 80, b.w, 80); });
+        obstacles.forEach(o => { 
+            ctx.fillStyle = "red"; ctx.beginPath(); ctx.arc(o.x - cameraX, o.lane * 80 + 40, 15, 0, Math.PI*2); ctx.fill(); 
+        });
+        particles.forEach(p => { 
+            ctx.globalAlpha = p.life; ctx.fillStyle = p.color; 
+            ctx.beginPath(); ctx.arc(p.x - cameraX, p.y, 3, 0, Math.PI*2); ctx.fill(); 
+        });
+        ctx.globalAlpha = 1;
+        drawSwimmer(player, currentSuit.color, cameraX, true);
+        drawSwimmer(cpu, "red", cameraX, false);
+    }
+
+    window.addEventListener('keydown', (e) => {
+        initAudio();
+        if (e.key === "ArrowUp" && player.lane > 0) player.lane--;
+        if (e.key === "ArrowDown" && player.lane < 4) player.lane++;
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") handleSwim();
+    });
+
+    openShop();
+    update();
+</script>
+</body>
+</html>
